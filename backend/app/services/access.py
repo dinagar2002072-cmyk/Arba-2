@@ -41,17 +41,3 @@ def validate_user_access(
                 detail=f"Sales organization access is required for plan account {market_code}/{customer_id}",
             )
     return pairs
-
-
-def validate_admin_sales_org_access(
-    admin_sales_org_access: list[str], sales_org_access: list[str]
-) -> list[str]:
-    admin_orgs = set(admin_sales_org_access)
-    if len(admin_orgs) != len(admin_sales_org_access):
-        raise HTTPException(status_code=422, detail="Duplicate administrator sales organization access")
-    if not admin_orgs.issubset(set(sales_org_access)):
-        raise HTTPException(
-            status_code=422,
-            detail="Administrator access must be included in the user's sales organization access",
-        )
-    return sorted(admin_orgs)

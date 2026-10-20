@@ -1,8 +1,7 @@
 import { useEffect, useState, type FormEvent } from "react";
 import { api } from "../../api";
-import { editableRoles, roles } from "../../constants";
 import { type AccessData, type AccountAssignment, type AdminUser, type Bootstrap } from "../../types";
-import { assignmentKey, errorText } from "../../utils";
+import { assignmentKey, downloadApiFile, errorText } from "../../utils";
 
 type DropdownOption = { value: string; label: string };
 
@@ -56,20 +55,21 @@ export function AccessManagement(props: {
   flash: (message: string) => void;
   setError: (message: string) => void;
   isSystemAdmin: boolean;
+  canEditConfiguration: boolean;
 }) {
   const [data, setData] = useState<AccessData | null>(null);
   const [revision, setRevision] = useState(0);
   const [salesOrgs, setSalesOrgs] = useState<string[]>([]);
-  const [adminSalesOrgs, setAdminSalesOrgs] = useState<string[]>([]);
   const [assignments, setAssignments] = useState<string[]>([]);
   const [active, setActive] = useState(true);
   const [editingUser, setEditingUser] = useState<AdminUser | null>(null);
   const [editSalesOrgs, setEditSalesOrgs] = useState<string[]>([]);
-  const [editAdminSalesOrgs, setEditAdminSalesOrgs] = useState<string[]>([]);
   const [editAssignments, setEditAssignments] = useState<string[]>([]);
   const [editActive, setEditActive] = useState(true);
   const [creating, setCreating] = useState(false);
   const [savingUserId, setSavingUserId] = useState<number | null>(null);
+  const [deletingUserId, setDeletingUserId] = useState<number | null>(null);
+  const [downloadingAudit, setDownloadingAudit] = useState(false);
 
   useEffect(() => {
     api<AccessData>("/admin/users")
@@ -119,33 +119,27 @@ export function AccessManagement(props: {
     const values = new FormData(form);
     const email = String(values.get("email") ?? "");
     const name = String(values.get("name") ?? "");
-    const role = String(values.get("role") ?? "PLANNER");
+    const roleId = Number(values.get("role_id"));
     setCreating(true);
     try {
       const created = await api<{
         id: number;
         email: string;
         role: string;
-        first_admin_sales_orgs: string[];
       }>("/admin/users", {
         method: "POST",
         body: JSON.stringify({
           email,
           name,
-          role,
+          role_id: roleId,
           active,
           sales_org_access: salesOrgs,
           assignments: assignments.map(accountFromKey),
-          admin_sales_org_access: adminSalesOrgs,
         }),
       });
-      const firstOrgList = created.first_admin_sales_orgs.length
-        ? ` First administrator for ${created.first_admin_sales_orgs.join(", ")}.`
-        : "";
-      props.flash(`Created User ID ${created.id} · ${created.email}.${firstOrgList}`);
+      props.flash(`Created User ID ${created.id} · ${created.email}.`);
       form.reset();
       setSalesOrgs([]);
-      setAdminSalesOrgs([]);
       setAssignments([]);
       setActive(true);
       setRevision((value) => value + 1);
@@ -162,7 +156,6 @@ export function AccessManagement(props: {
       .map(assignmentKey) ?? [];
     setEditingUser(user);
     setEditSalesOrgs(user.sales_org_access);
-    setEditAdminSalesOrgs(user.admin_sales_org_access);
     setEditAssignments(userAssignments);
     setEditActive(user.active);
   }
@@ -173,23 +166,19 @@ export function AccessManagement(props: {
     const values = new FormData(event.currentTarget);
     setSavingUserId(editingUser.id);
     try {
-      const result = await api<{ first_admin_sales_orgs: string[] }>(
+      await api(
         `/admin/users/${editingUser.id}`,
         {
           method: "PUT",
           body: JSON.stringify({
-            role: values.get("role"),
+            role_id: Number(values.get("role_id")),
             active: editActive,
             sales_org_access: editSalesOrgs,
             assignments: editAssignments.map(accountFromKey),
-            admin_sales_org_access: editAdminSalesOrgs,
           }),
         },
       );
-      const firstOrgMessage = result.first_admin_sales_orgs.length
-        ? ` First administrator for ${result.first_admin_sales_orgs.join(", ")}.`
-        : "";
-      props.flash(`Access updated for User ID ${editingUser.id}.${firstOrgMessage}`);
+      props.flash(`Access updated for User ID ${editingUser.id}.`);
       setEditingUser(null);
       setRevision((value) => value + 1);
     } catch (error) {
@@ -199,22 +188,51 @@ export function AccessManagement(props: {
     }
   }
 
+  async function deleteUser() {
+    if (!editingUser || !props.canEditConfiguration) return;
+    if (!window.confirm(`Delete user ${editingUser.name} (${editingUser.email})? This cannot be undone.`)) return;
+    setDeletingUserId(editingUser.id);
+    try {
+      await api(`/admin/users/${editingUser.id}`, { method: "DELETE" });
+      props.flash(`Deleted user ${editingUser.name} (${editingUser.email}).`);
+      setEditingUser(null);
+      setRevision((value) => value + 1);
+    } catch (error) {
+      props.setError(errorText(error));
+    } finally {
+      setDeletingUserId(null);
+    }
+  }
+
+  async function downloadUserAudit() {
+    setDownloadingAudit(true);
+    try {
+      await downloadApiFile("/admin/users/audit-export", "user_audit.xlsx");
+    } catch (error) {
+      props.setError(errorText(error));
+    } finally {
+      setDownloadingAudit(false);
+    }
+  }
+
   if (!data) return <p className="muted">Loading users…</p>;
+  const roleDefinitions = data.role_definitions ?? [];
   const salesOrgOptions = data.sales_orgs.map((item) => ({
     value: item.code,
     label: `${item.name} (${item.code})`,
   }));
-  const adminOptions = salesOrgOptions.filter((option) => salesOrgs.includes(option.value));
-  const editAdminOptions = salesOrgOptions.filter((option) => editSalesOrgs.includes(option.value));
+  const assignableRoles = roleDefinitions.filter((role) => role.base_role !== "ADMIN");
+  const adminRoleId = roleDefinitions.find((role) => role.base_role === "ADMIN")?.id;
 
   return <section className="config-section">
     <div className="panel">
       <div className="panel-heading"><div><h2>Create User ID</h2></div></div>
-      <form className="create-user-form" onSubmit={(event) => void createUser(event)}>
+      {!roleDefinitions.length && <p className="alert error-alert">Role definitions are unavailable. Restart the backend using the updated ArBa code, then reload Configuration.</p>}
+      {props.canEditConfiguration && <form className="create-user-form" onSubmit={(event) => void createUser(event)}>
         <div className="create-user-identity">
           <label>Email ID<input autoComplete="email" maxLength={254} name="email" required type="email" /></label>
           <label>User Name<input maxLength={100} minLength={2} name="name" required /></label>
-          <label>ArBa Role<select defaultValue="PLANNER" name="role">{roles.map((role) => <option key={role}>{role}</option>)}</select></label>
+          <label>ArBa Role<select defaultValue={assignableRoles[0]?.id ?? ""} disabled={!assignableRoles.length} name="role_id" required><option disabled value="">Create a role first</option>{assignableRoles.map((role) => <option key={role.id} value={role.id}>{role.name}</option>)}</select></label>
         </div>
         <div className="create-user-access">
           <MultiSelectDropdown
@@ -222,16 +240,9 @@ export function AccessManagement(props: {
             onChange={(selected) => {
               setSalesOrgs(selected);
               setAssignments((current) => selectedAccountsForSalesOrgs(current, selected));
-              setAdminSalesOrgs((current) => current.filter((value) => selected.includes(value)));
             }}
             options={salesOrgOptions}
             selected={salesOrgs}
-          />
-          <MultiSelectDropdown
-            label="ArBa Administrator Access"
-            onChange={setAdminSalesOrgs}
-            options={adminOptions}
-            selected={adminSalesOrgs}
           />
           <MultiSelectDropdown
             label="Plan Account Access"
@@ -247,15 +258,19 @@ export function AccessManagement(props: {
             <span className="switch-track" aria-hidden="true"><span /></span>
             User Active
           </label>
-          <button className="button primary" disabled={creating} type="submit">
+          <button className="button primary" disabled={creating || !assignableRoles.length} type="submit">
             {creating ? "Creating…" : "Create User"}
           </button>
         </div>
-      </form>
+      </form>}
+      {!props.canEditConfiguration && <p className="muted">Your role has view-only access to Configuration.</p>}
     </div>
 
     <div className="panel">
-      <div className="panel-heading"><div><h2>Users</h2><p>Inactive users are automatically deactivated after 30 days without a successful sign-in.</p></div></div>
+      <div className="panel-heading">
+        <div><h2>Users</h2><p>Inactive users are automatically deactivated after 30 days without a successful sign-in.</p></div>
+        {props.isSystemAdmin && <button className="button" disabled={downloadingAudit} onClick={() => void downloadUserAudit()} type="button">{downloadingAudit ? "Preparing…" : "User Audit"}</button>}
+      </div>
       <div className="table-scroll">
         <table className="data-table user-table">
           <thead><tr><th>Active/Inactive</th><th>User Name</th><th>Email Address</th><th>ArBa Role</th><th>Actions</th></tr></thead>
@@ -265,7 +280,7 @@ export function AccessManagement(props: {
               <td>{user.name}</td>
               <td>{user.email}</td>
               <td>{user.role}</td>
-              <td><button className="button" onClick={() => beginEdit(user)} type="button">Edit access</button></td>
+              <td>{props.canEditConfiguration && <button className="button" onClick={() => beginEdit(user)} type="button">Edit access</button>}</td>
             </tr>)}
             {!data.users.length && <tr><td className="empty-cell" colSpan={5}>No users have been created.</td></tr>}
           </tbody>
@@ -280,18 +295,24 @@ export function AccessManagement(props: {
           <button aria-label="Close" className="button" onClick={() => setEditingUser(null)} type="button">Close</button>
         </div>
         <form className="edit-user-form" onSubmit={(event) => void saveUser(event)}>
-          <label>ArBa Role<select defaultValue={editingUser.role} name="role">{editableRoles.map((role) => <option key={role}>{role}</option>)}</select></label>
+          {(() => {
+            const editingAdmin = (editingUser.base_role ?? editingUser.role.toUpperCase()) === "ADMIN";
+            const currentRoleId = roleDefinitions.find((role) => role.id === editingUser.role_definition_id)?.id
+              ?? roleDefinitions.find((role) => role.name === editingUser.role)?.id
+              ?? "";
+            const options = editingAdmin ? roleDefinitions : assignableRoles;
+            const selectableCurrentRoleId = options.some((role) => role.id === currentRoleId) ? currentRoleId : "";
+            return <label>ArBa Role<select defaultValue={selectableCurrentRoleId} disabled={editingAdmin || !roleDefinitions.length} name={editingAdmin ? undefined : "role_id"} required><option disabled value="">Select a role</option>{options.map((role) => <option key={role.id} value={role.id}>{role.name}{role.base_role === "ADMIN" ? " (fixed)" : ""}</option>)}</select>{editingAdmin && <input name="role_id" type="hidden" value={currentRoleId || adminRoleId || ""} />}</label>;
+          })()}
           <MultiSelectDropdown
             label="Sales Organization"
             onChange={(selected) => {
               setEditSalesOrgs(selected);
               setEditAssignments((current) => selectedAccountsForSalesOrgs(current, selected));
-              setEditAdminSalesOrgs((current) => current.filter((value) => selected.includes(value)));
             }}
             options={salesOrgOptions}
             selected={editSalesOrgs}
           />
-          <MultiSelectDropdown label="ArBa Administrator Access" onChange={setEditAdminSalesOrgs} options={editAdminOptions} selected={editAdminSalesOrgs} />
           <MultiSelectDropdown label="Plan Account Access" onChange={setEditAssignments} options={accountOptionsFor(editSalesOrgs)} selected={editAssignments} disabled={!editSalesOrgs.length} />
           <label className="user-active-switch">
             <input checked={editActive} onChange={(event) => setEditActive(event.target.checked)} type="checkbox" />
@@ -299,7 +320,8 @@ export function AccessManagement(props: {
             User Active
           </label>
           <div className="form-actions">
-            <button className="button primary" disabled={savingUserId === editingUser.id} type="submit">{savingUserId === editingUser.id ? "Saving…" : "Save User"}</button>
+            <button className="button primary" disabled={savingUserId === editingUser.id || !roleDefinitions.length} type="submit">{savingUserId === editingUser.id ? "Saving…" : "Save User"}</button>
+            {props.canEditConfiguration && (editingUser.base_role ?? editingUser.role.toUpperCase()) !== "ADMIN" && <button className="button danger" disabled={deletingUserId === editingUser.id || savingUserId === editingUser.id} onClick={() => void deleteUser()} type="button">{deletingUserId === editingUser.id ? "Deleting…" : "Delete User"}</button>}
             <button className="button" onClick={() => setEditingUser(null)} type="button">Cancel</button>
           </div>
         </form>

@@ -4,6 +4,7 @@ import { AccessManagement } from "./AccessManagement";
 import { FilesConfiguration } from "./FilesConfiguration";
 import { MasterDataConfig } from "./MasterDataConfig";
 import { PhasingConfig } from "./PhasingConfig";
+import { RoleDefinitions } from "./RoleDefinitions";
 import { TacticsConfig } from "./TacticsConfig";
 import { type Bootstrap, type ConfigTab } from "../../types";
 
@@ -11,6 +12,7 @@ export function Configuration(props: {
   activeTab: ConfigTab;
   setActiveTab: (tab: ConfigTab) => void;
   isSystemAdmin: boolean;
+  canEditConfiguration: boolean;
   canManageTactics: boolean;
   bootstrap: Bootstrap;
   flash: (message: string) => void;
@@ -18,8 +20,8 @@ export function Configuration(props: {
   refresh: () => void;
 }) {
   const tabs: ConfigTab[] = props.isSystemAdmin
-    ? ["access", "customer", "product", "tactics", "phasing", "files"]
-    : props.canManageTactics ? ["access", "tactics", "phasing"] : ["access"];
+    ? ["access", "roles", "tactics", "phasing", "files", "customer", "product"]
+    : props.canEditConfiguration ? ["access", "tactics", "phasing"] : ["access"];
   return <>
     <Heading title="Configuration" />
     <nav className="config-tabs" aria-label="Configuration sections">
@@ -36,5 +38,6 @@ export function Configuration(props: {
     {props.activeTab === "tactics" && props.canManageTactics && <TacticsConfig {...props} />}
     {props.activeTab === "phasing" && props.canManageTactics && <PhasingConfig {...props} />}
     {props.activeTab === "files" && <FilesConfiguration {...props} />}
+    {props.activeTab === "roles" && props.isSystemAdmin && <RoleDefinitions {...props} />}
   </>;
 }

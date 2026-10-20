@@ -59,6 +59,14 @@ def create_schema_and_seed() -> None:
                 is_seed INTEGER NOT NULL DEFAULT 0,
                 sso_subject TEXT, last_login_at TEXT
             );
+            CREATE TABLE IF NOT EXISTS role_definition (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                name TEXT NOT NULL COLLATE NOCASE UNIQUE,
+                system_key TEXT UNIQUE,
+                base_role TEXT NOT NULL CHECK(base_role IN ('PLANNER','APPROVER','VIEWER','ADMIN')),
+                permissions_json TEXT NOT NULL,
+                active INTEGER NOT NULL DEFAULT 1
+            );
             CREATE TABLE IF NOT EXISTS user_assignment (
                 user_id INTEGER NOT NULL REFERENCES app_user(id), market_code TEXT NOT NULL,
                 customer_id INTEGER NOT NULL,
@@ -202,6 +210,12 @@ def create_schema_and_seed() -> None:
         for column, definition in promotion_migrations.items():
             if column not in promotion_columns:
                 db.execute(f"ALTER TABLE promotion ADD COLUMN {column} {definition}")
+        user_columns = {row["name"] for row in db.execute("PRAGMA table_info(app_user)")}
+        if "role_definition_id" not in user_columns:
+            db.execute("ALTER TABLE app_user ADD COLUMN role_definition_id INTEGER")
+        from app.role_permissions import ensure_default_roles
+
+        ensure_default_roles(db)
         db.execute(
             "INSERT OR IGNORE INTO user_sales_org(user_id,sales_org) "
             "SELECT DISTINCT ua.user_id,m.p10_sales_org FROM user_assignment ua "
@@ -223,3 +237,4 @@ def create_schema_and_seed() -> None:
         if db.execute("SELECT 1 FROM market LIMIT 1").fetchone():
             return
         seed_database(db)
+        ensure_default_roles(db)

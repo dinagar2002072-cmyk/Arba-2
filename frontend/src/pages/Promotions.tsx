@@ -1,5 +1,5 @@
 import { Fragment, useCallback, useEffect, useRef, useState, type FormEvent } from "react";
-import { api } from "../api";
+import { api, hasPermission } from "../api";
 import { Heading } from "../components/Heading";
 import { type PageProps, type Promotion } from "../types";
 import { errorText, isoWeekForDate, today } from "../utils";
@@ -325,8 +325,8 @@ export function Promotions(props: PageProps) {
       reload();
     } catch (error) { props.setError(errorText(error)); }
   }
-  const canEdit = props.user.role === "PLANNER" || props.user.role === "APPROVER" || props.user.role === "ADMIN";
-  const canApprove = props.user.role === "APPROVER" || props.user.role === "ADMIN";
+  const canEdit = hasPermission(props.user, "promotions", "edit");
+  const canApprove = hasPermission(props.user, "promotions", "approve");
   const statusLabels: Record<string, string> = {
     NEW: "Entry",
     SAVED: "Planned",
@@ -506,7 +506,7 @@ export function Promotions(props: PageProps) {
         {canEdit && promo.status === "NEW" && <button className="button primary" onClick={() => void statusAction(promo.id, "save")}>Save</button>}
         {canEdit && promo.status === "SAVED" && <button className="button" onClick={() => void statusAction(promo.id, "confirm")}>Confirm</button>}
         {canApprove && promo.status === "CHANGED" && <button className="button primary" onClick={() => void statusAction(promo.id, "approve")}>Approve</button>}
-        {["PLANNER", "APPROVER", "ADMIN"].includes(props.user.role) && promo.status === "APPROVED" && promo.start_date > today() && <button className="button" onClick={() => void statusAction(promo.id, "revert")}>Revert to edit</button>}
+        {canEdit && promo.status === "APPROVED" && promo.start_date > today() && <button className="button" onClick={() => void statusAction(promo.id, "revert")}>Revert to edit</button>}
       </td></tr>{expanded.has(promo.id) && <>
         {promo.items.map((item) => <tr className="detail-row" key={`${promo.id}-${item.product}`}><td /><td /><td>{item.product}</td><td colSpan={2}>{item.description}</td><td colSpan={2}>Baseline {item.baseline} · Total {item.total}</td><td>{item.baseline}</td><td>{item.total}</td><td>Uplift {item.uplift}</td><td /></tr>)}
         <tr className="detail-row" key={`${promo.id}-audit`}><td colSpan={11}>

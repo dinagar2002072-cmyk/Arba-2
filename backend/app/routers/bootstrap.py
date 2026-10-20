@@ -17,7 +17,7 @@ router = APIRouter(tags=['bootstrap'])
 @router.get(f"{API_PREFIX}/bootstrap")
 async def bootstrap(user: CurrentUser) -> dict[str, Any]:
     with DB_LOCK, connect() as db:
-        if user["role"] == "ADMIN":
+        if user.get("base_role", user["role"]) == "ADMIN":
             market_query = (
                 "SELECT code,name,plan_mode,p10_sales_org,horizon_weeks FROM market "
                 "WHERE active=1 ORDER BY code"

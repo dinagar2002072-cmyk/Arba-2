@@ -1,11 +1,20 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { type User, api } from "./api";
+import { hasPermission, isSystemAdmin, type User, api } from "./api";
 import { LoginScreen } from "./components/LoginScreen";
 import { pageNames } from "./constants";
 import { PlanningPage } from "./pages/PlanningPage";
 import { Configuration } from "./pages/configuration/Configuration";
 import { type Bootstrap, type ConfigTab, type Page } from "./types";
 import { errorText } from "./utils";
+
+const planningScreenPermissions: [Page, string][] = [
+  ["weekly", "weekly"],
+  ["promotions", "promotions"],
+  ["calendar", "calendar"],
+  ["history", "history"],
+  ["report", "report"],
+  ["listing", "listing"],
+];
 
 export default function App() {
   const [user, setUser] = useState<User | null>(null);
@@ -21,6 +30,22 @@ export default function App() {
   const [calendarPromotionId, setCalendarPromotionId] = useState<number | null>(null);
   const [ssoEnabled, setSsoEnabled] = useState(false);
   const selection = useRef({ market: "", customerId: 0 });
+  const accessiblePages = planningScreenPermissions
+    .filter(([, screen]) => user && hasPermission(user, screen, "view"))
+    .map(([pageName]) => pageName);
+  const systemAdmin = user ? isSystemAdmin(user) : false;
+  const canViewConfiguration = Boolean(user && hasPermission(user, "configuration", "view"));
+  const canEditConfiguration = Boolean(user && hasPermission(user, "configuration", "edit"));
+
+  useEffect(() => {
+    if (!user) return;
+    if (page === "configuration" && !canViewConfiguration) {
+      setPage(accessiblePages[0] ?? "weekly");
+    } else if (page !== "configuration" && !accessiblePages.includes(page)) {
+      setPage(accessiblePages[0] ?? (canViewConfiguration ? "configuration" : "weekly"));
+    }
+  }, [accessiblePages.join("|"), canViewConfiguration, page, user]);
+
   useEffect(() => {
     selection.current = { market, customerId };
   }, [market, customerId]);
@@ -68,9 +93,6 @@ export default function App() {
         setSsoEnabled(sso.enabled);
         if (authenticatedUser) {
           await enterApp(authenticatedUser);
-          if (new URLSearchParams(window.location.search).get("sso") === "created_admin") {
-            setNotice("Your account is the first ArBa account and has been made an administrator.");
-          }
         }
       })
       .catch((reason: unknown) => {
@@ -94,20 +116,15 @@ export default function App() {
     [bootstrap?.customers, market],
   );
 
-  async function authenticate(path: "/auth/login" | "/auth/signup", body: object) {
+  async function authenticate(path: "/auth/login", body: object) {
     setBusy(true);
     setError("");
     try {
-      const result = await api<{ user: User; first_user_admin?: boolean }>(path, {
+      const result = await api<{ user: User }>(path, {
         method: "POST",
         body: JSON.stringify(body),
       });
       await enterApp(result.user);
-      if (path === "/auth/signup") {
-        setNotice(result.first_user_admin
-          ? "Your account is the first ArBa account and has been made an administrator."
-          : "Account created. An administrator must assign your role and plan-account access.");
-      }
     } catch (reason) {
       setError(errorText(reason));
     } finally {
@@ -146,9 +163,7 @@ export default function App() {
     return <main className="center-state">Loading your ArBa workspace…</main>;
   }
   const visibleProducts = bootstrap.products;
-  const isSystemAdmin = user.role === "ADMIN";
-  const isArbaAdmin = isSystemAdmin || Boolean(user.admin_sales_org_access?.length);
-  if (!isArbaAdmin && bootstrap.markets.length === 0) {
+  if (!canViewConfiguration && bootstrap.markets.length === 0) {
     return (
       <main className="access-pending">
         <header className="topbar"><strong className="wordmark">ArBa</strong><button className="button" onClick={signOut}>Sign out</button></header>
@@ -162,7 +177,7 @@ export default function App() {
     );
   }
 
-  const planningPages: Page[] = ["weekly", "promotions", "calendar", "history", "report", "listing"];
+  const planningPages = accessiblePages;
   const activePage = page;
   function navigatePlanningPage(nextPage: Page) {
     setPage(nextPage);
@@ -175,7 +190,7 @@ export default function App() {
         <span className="product-title">Advanced Volume Planner</span>
         <span className="topbar-spacer" />
         <span className="user-name">{user.name}</span>
-        <span className="role-pill">{isArbaAdmin && !isSystemAdmin ? "ORG ADMIN" : user.role}</span>
+        <span className="role-pill">{user.role}</span>
         <button className="button" onClick={signOut}>Sign out</button>
       </header>
       <div className="workspace">
@@ -190,7 +205,7 @@ export default function App() {
               {pageNames[item]}
             </button>
           ))}
-          {isArbaAdmin && (
+          {canViewConfiguration && (
             <>
               <p className="nav-caption">CONFIGURATION</p>
               <button
@@ -219,18 +234,25 @@ export default function App() {
           </section>}
           {error && <div role="alert" className="alert error-alert">{error}<button aria-label="Dismiss" onClick={() => setError("")}>×</button></div>}
           {notice && <div role="status" className="alert success-alert">{notice}</div>}
-          {page === "configuration" && isArbaAdmin ? (
+          {page === "configuration" && canViewConfiguration ? (
             <Configuration
               key={configTab}
               activeTab={configTab}
               setActiveTab={setConfigTab}
-              isSystemAdmin={isSystemAdmin}
-              canManageTactics={isArbaAdmin}
+              isSystemAdmin={systemAdmin}
+              canManageTactics={canEditConfiguration}
+              canEditConfiguration={canEditConfiguration}
               bootstrap={bootstrap}
               flash={flash}
               setError={setError}
               refresh={refreshConfiguration}
             />
+          ) : page !== "configuration" && !planningPages.includes(page) ? (
+            <section className="pending-card" role="status">
+              <span className="eyebrow">NO SCREEN ACCESS</span>
+              <h1>No planning screens are assigned to your role</h1>
+              <p>Ask an ArBa administrator to grant screen access in Configuration → Role Definition.</p>
+            </section>
           ) : page !== "configuration" && (!customers.some((item) => item.id === customerId) || visibleProducts.length === 0) ? (
             <section className="pending-card master-data-empty" role="status">
               <span className="eyebrow">MASTER DATA REQUIRED</span>
@@ -251,7 +273,7 @@ export default function App() {
                     : "",
                 ].filter(Boolean).join(" ")}
               </p>
-              {isArbaAdmin && <button className="button primary" onClick={() => setPage("configuration")}>Open Configuration</button>}
+              {canViewConfiguration && <button className="button primary" onClick={() => setPage("configuration")}>Open Configuration</button>}
             </section>
           ) : (
             <PlanningPage
@@ -268,8 +290,10 @@ export default function App() {
               openPromotionId={calendarPromotionId}
               onPromotionOpened={() => setCalendarPromotionId(null)}
               onOpenPromotion={(promotionId) => {
-                setCalendarPromotionId(promotionId);
-                setPage("promotions");
+                if (planningPages.includes("promotions")) {
+                  setCalendarPromotionId(promotionId);
+                  setPage("promotions");
+                }
               }}
             />
           )}

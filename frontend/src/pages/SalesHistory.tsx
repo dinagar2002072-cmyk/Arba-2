@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { api } from "../api";
+import { api, hasPermission } from "../api";
 import { Heading } from "../components/Heading";
 import { type PageProps, type Product } from "../types";
 import { downloadApiFile, errorText } from "../utils";
@@ -57,8 +57,9 @@ export function SalesHistory(props: PageProps) {
       props.setError(errorText(error));
     }
   }
+  const canExport = hasPermission(props.user, "history", "export");
   return <>
-    <Heading title="Sales Data" actions={
+    <Heading title="Sales Data" actions={canExport &&
       <button className="button" onClick={() => void exportP10AreteData()}>
         Download P10 Arete
       </button>

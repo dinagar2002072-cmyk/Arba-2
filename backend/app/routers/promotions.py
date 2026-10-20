@@ -11,7 +11,7 @@ from fastapi import APIRouter, HTTPException
 
 from app.config import API_PREFIX
 from app.db import DB_LOCK, connect
-from app.deps import CurrentUser, check_assignment, require_role
+from app.deps import CurrentUser, check_assignment, require_permission
 from app.schemas import PromoPayload, PromotionCopyPayload
 from app.services.audit import (
     audit,
@@ -37,6 +37,7 @@ async def promotion_baselines(
     end_date: date,
     user: CurrentUser,
 ) -> dict[str, Any]:
+    require_permission(user, "promotions", "view")
     if end_date < start_date:
         raise HTTPException(status_code=422, detail="End Date must be on or after Start Date")
     with DB_LOCK, connect() as db:
@@ -59,6 +60,7 @@ async def promotion_baselines(
 async def get_promotions(
     user: CurrentUser, market: str | None = None, customer_id: int | None = None
 ) -> dict[str, Any]:
+    require_permission(user, "promotions", "view")
     with DB_LOCK, connect() as db:
         query = (
             "SELECT pr.*,c.name AS customer_name FROM promotion pr "
@@ -76,7 +78,7 @@ async def get_promotions(
         if customer_id:
             query += " AND pr.customer_id=?"
             parameters.append(customer_id)
-        if user["role"] != "ADMIN":
+        if user.get("base_role", user["role"]) != "ADMIN":
             query += " AND EXISTS(SELECT 1 FROM user_assignment ua WHERE ua.user_id=? AND ua.market_code=pr.market_code AND ua.customer_id=pr.customer_id)"
             parameters.append(user["id"])
         rows = db.execute(
@@ -88,6 +90,7 @@ async def get_promotions(
 
 @router.get(f"{API_PREFIX}/promotions/{{promotion_id}}/audit")
 async def promotion_audit(promotion_id: int, user: CurrentUser) -> dict[str, Any]:
+    require_permission(user, "promotions", "view")
     with DB_LOCK, connect() as db:
         promotion = db.execute(
             "SELECT market_code,customer_id FROM promotion WHERE id=?",
@@ -145,7 +148,7 @@ async def promotion_audit(promotion_id: int, user: CurrentUser) -> dict[str, Any
 
 @router.post(f"{API_PREFIX}/promotions/copy")
 async def copy_promotions(payload: PromotionCopyPayload, user: CurrentUser) -> dict[str, Any]:
-    require_role(user, "PLANNER", "APPROVER")
+    require_permission(user, "promotions", "edit")
     if len(set(payload.promotion_ids)) != len(payload.promotion_ids):
         raise HTTPException(status_code=422, detail="Select each promotion only once")
 
@@ -234,7 +237,7 @@ async def copy_promotions(payload: PromotionCopyPayload, user: CurrentUser) -> d
 
 @router.post(f"{API_PREFIX}/promotions")
 async def save_promotion(payload: PromoPayload, user: CurrentUser) -> dict[str, Any]:
-    require_role(user, "PLANNER", "APPROVER")
+    require_permission(user, "promotions", "edit")
     if payload.end_date < payload.start_date:
         raise HTTPException(
             status_code=422, detail="Promotion End Date must be on or after Start Date"
@@ -422,7 +425,7 @@ async def save_promotion(payload: PromoPayload, user: CurrentUser) -> dict[str, 
 
 @router.post(f"{API_PREFIX}/promotions/{{promotion_id}}/save")
 async def plan_promotion(promotion_id: int, user: CurrentUser) -> dict[str, str]:
-    require_role(user, "PLANNER", "APPROVER")
+    require_permission(user, "promotions", "edit")
     with DB_LOCK, connect() as db:
         with db:
             row = db.execute("SELECT * FROM promotion WHERE id=?", (promotion_id,)).fetchone()
@@ -450,7 +453,7 @@ async def plan_promotion(promotion_id: int, user: CurrentUser) -> dict[str, str]
 
 @router.post(f"{API_PREFIX}/promotions/{{promotion_id}}/confirm")
 async def confirm_promotion(promotion_id: int, user: CurrentUser) -> dict[str, str]:
-    require_role(user, "PLANNER", "APPROVER")
+    require_permission(user, "promotions", "edit")
     with DB_LOCK, connect() as db:
         with db:
             row = db.execute("SELECT * FROM promotion WHERE id=?", (promotion_id,)).fetchone()
@@ -478,7 +481,7 @@ async def confirm_promotion(promotion_id: int, user: CurrentUser) -> dict[str, s
 
 @router.post(f"{API_PREFIX}/promotions/{{promotion_id}}/approve")
 async def approve_promotion(promotion_id: int, user: CurrentUser) -> dict[str, str]:
-    require_role(user, "APPROVER")
+    require_permission(user, "promotions", "approve")
     with DB_LOCK, connect() as db:
         with db:
             row = db.execute("SELECT * FROM promotion WHERE id=?", (promotion_id,)).fetchone()
@@ -507,7 +510,7 @@ async def approve_promotion(promotion_id: int, user: CurrentUser) -> dict[str, s
 
 @router.post(f"{API_PREFIX}/promotions/{{promotion_id}}/revert")
 async def revert_promotion(promotion_id: int, user: CurrentUser) -> dict[str, str]:
-    require_role(user, "PLANNER", "APPROVER")
+    require_permission(user, "promotions", "edit")
     with DB_LOCK, connect() as db:
         with db:
             row = db.execute("SELECT * FROM promotion WHERE id=?", (promotion_id,)).fetchone()

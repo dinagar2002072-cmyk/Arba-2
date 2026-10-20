@@ -1,5 +1,5 @@
 import { Fragment, useEffect, useRef, useState } from "react";
-import { api } from "../api";
+import { api, hasPermission } from "../api";
 import { Heading } from "../components/Heading";
 import { type BaselineData, type PageProps } from "../types";
 import { downloadApiFile, encodeFile, errorText } from "../utils";
@@ -88,17 +88,21 @@ export function WeeklyVolume(props: PageProps) {
       );
     } catch (error) { props.setError(errorText(error)); }
   }
-  const canEdit = ["PLANNER", "APPROVER", "ADMIN"].includes(props.user.role);
+  const canEdit = hasPermission(props.user, "weekly", "edit");
+  const canExport = hasPermission(props.user, "weekly", "export");
+  const canImport = hasPermission(props.user, "weekly", "import");
   return <>
     <Heading title="Weekly Baseline Volume" actions={<>
-      <button className="button" disabled={!visibleWeeks.length} onClick={() => void exportBaseline()}>Extract Baseline</button>
-      <button className="button" onClick={() => void downloadApiFile(
+      {canExport && <button className="button" disabled={!visibleWeeks.length} onClick={() => void exportBaseline()}>Extract Baseline</button>}
+      {canExport && <button className="button" onClick={() => void downloadApiFile(
         `/baseline/audit/export?market=${encodeURIComponent(props.market)}&customer_id=${props.customerId}`,
         `baseline_audit_${props.market}_${props.customerId}.xlsx`,
-      ).catch((error: unknown) => props.setError(errorText(error)))}>Download Audit Log</button>
-      {canEdit && <>
+      ).catch((error: unknown) => props.setError(errorText(error)))}>Download Audit Log</button>}
+      {canImport && <>
         <input ref={baselineFileInput} accept=".xlsx" className="visually-hidden" onChange={(event) => void uploadBaseline(event.target.files?.[0])} type="file" />
         <button className="button" onClick={() => baselineFileInput.current?.click()}>Load Baseline</button>
+      </>}
+      {canEdit && <>
         <button className="button primary" disabled={!dirty} onClick={() => void save()}>Save baseline</button>
       </>}
     </>} />

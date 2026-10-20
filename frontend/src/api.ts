@@ -2,9 +2,21 @@ export type User = {
   id: number;
   email: string;
   name: string;
-  role: "PLANNER" | "APPROVER" | "ADMIN" | "VIEWER";
+  role: string;
+  base_role?: "PLANNER" | "APPROVER" | "ADMIN" | "VIEWER";
+  role_definition_id?: number | null;
+  permissions?: Record<string, string[]>;
   admin_sales_org_access?: string[];
 };
+
+export function isSystemAdmin(user: User): boolean {
+  return (user.base_role ?? user.role).toUpperCase() === "ADMIN";
+}
+
+export function hasPermission(user: User, screen: string, action: string): boolean {
+  if (isSystemAdmin(user)) return true;
+  return user.permissions?.[screen]?.includes(action) === true;
+}
 
 const API_BASE = import.meta.env.VITE_API_BASE_URL ?? "/api/v1";
 

@@ -7,9 +7,9 @@
   frontend development, Vite runs on port 5173 and proxies requests to the
   FastAPI server on port 8171.
 - Microsoft Entra SSO is optional and disabled until the instance is
-  configured. The first non-seeded account registered locally or through SSO
-  becomes the global ArBa administrator; subsequent self-registered accounts
-  start as VIEWER until an administrator assigns access.
+  configured. The first run creates only the global ArBa administrator.
+  Self-registration and automatic account provisioning through SSO are
+  disabled; administrators create users and roles through Configuration.
 - Admin-created accounts need an initial password because local password
   authentication is supported alongside the optional SSO integration.
 - Sales organization access is mapped to the market's configured P10 sales

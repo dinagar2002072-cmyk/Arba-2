@@ -90,6 +90,15 @@ export type AccessData = {
     customer_name: string;
   })[];
   sales_orgs: SalesOrg[];
+  role_definitions?: { id: number; name: string; base_role: string }[];
+};
+export type RoleDefinition = {
+  id: number;
+  name: string;
+  system_key: string | null;
+  base_role: string;
+  permissions: Record<string, string[]>;
+  is_system: boolean;
 };
 export type ManagedFile = {
   id: number;
@@ -111,7 +120,7 @@ export type Page =
   | "report"
   | "listing"
   | "configuration";
-export type ConfigTab = "access" | "customer" | "product" | "tactics" | "phasing" | "files";
+export type ConfigTab = "access" | "customer" | "product" | "tactics" | "phasing" | "files" | "roles";
 
 export type PageProps = {
   page: Page;

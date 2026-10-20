@@ -18,16 +18,15 @@ from fastapi.responses import RedirectResponse
 from app.config import API_PREFIX, SSO_SCOPES, SSO_STATE_COOKIE, logger
 from app.db import DB_LOCK, connect
 from app.deps import CurrentUser
+from app.role_permissions import user_role_data
 from app.schemas import LoginPayload, SignupPayload
 from app.security import (
-    password_hash,
     set_session_cookie,
     sign_session,
     signed_sso_state,
     verify_password,
     verify_sso_state,
 )
-from app.services.audit import audit
 from app.services.sso import SSOAuthenticationError, entra_sso_config, sso_http_json
 from app.utils import utcnow
 
@@ -60,8 +59,10 @@ async def login(payload: LoginPayload, response: Response) -> dict[str, Any]:
                         (row["id"],),
                     )
                 ]
+                role_data = user_role_data(db, row["role_definition_id"], row["role"])
             else:
                 admin_sales_org_access = []
+                role_data = {}
     if not authenticated or row is None:
         raise HTTPException(status_code=401, detail="Invalid email or password")
     expiry = int((utcnow() + timedelta(hours=10)).timestamp())
@@ -79,7 +80,7 @@ async def login(payload: LoginPayload, response: Response) -> dict[str, Any]:
             "id": row["id"],
             "email": row["email"],
             "name": row["name"],
-            "role": row["role"],
+            **role_data,
             "admin_sales_org_access": admin_sales_org_access,
         }
     }
@@ -87,44 +88,11 @@ async def login(payload: LoginPayload, response: Response) -> dict[str, Any]:
 
 @router.post(f"{API_PREFIX}/auth/signup", status_code=201)
 async def signup(payload: SignupPayload, response: Response) -> dict[str, Any]:
-    email = payload.email.strip().lower()
-    name = payload.name.strip()
-    if len(name) < 2:
-        raise HTTPException(status_code=422, detail="Name must contain at least 2 characters")
-    hashed_password = password_hash(payload.password)
-    with DB_LOCK, connect() as db:
-        with db:
-            db.execute("BEGIN IMMEDIATE")
-            if db.execute(
-                "SELECT 1 FROM app_user WHERE email=? COLLATE NOCASE", (email,)
-            ).fetchone():
-                raise HTTPException(
-                    status_code=409,
-                    detail="An account with this email already exists. Sign in or contact an administrator.",
-                )
-            first_user_admin = (
-                db.execute("SELECT 1 FROM app_user WHERE is_seed=0 LIMIT 1").fetchone() is None
-            )
-            role = "ADMIN" if first_user_admin else "VIEWER"
-            cursor = db.execute(
-                "INSERT INTO app_user(email,name,role,password_hash,is_seed,last_login_at) "
-                "VALUES(?,?,?,?,0,?)",
-                (email, name, role, hashed_password, utcnow().isoformat()),
-            )
-            user_id = int(cursor.lastrowid)
-            audit(
-                db,
-                "app_user",
-                str(user_id),
-                "SIGN_UP",
-                email,
-                after={"role": role},
-            )
-            row = db.execute(
-                "SELECT id,email,name,role FROM app_user WHERE id=?", (user_id,)
-            ).fetchone()
-    set_session_cookie(response, int(row["id"]), str(row["role"]))
-    return {"user": dict(row), "first_user_admin": first_user_admin}
+    del payload, response
+    raise HTTPException(
+        status_code=403,
+        detail="Self-registration is disabled. Ask an ArBa administrator to create your account.",
+    )
 
 
 @router.get(f"{API_PREFIX}/auth/sso/status")
@@ -262,29 +230,14 @@ async def sso_callback(
                 "SELECT id,email,name,role,active FROM app_user WHERE sso_subject=?",
                 (sso_subject,),
             ).fetchone()
-            created = row is None
             if row is None:
                 email_row = db.execute(
                     "SELECT id FROM app_user WHERE email=? COLLATE NOCASE", (email,)
                 ).fetchone()
-                if email_row:
-                    response = RedirectResponse("/?sso_error=account_exists", status_code=303)
-                    response.delete_cookie(SSO_STATE_COOKIE, path=f"{API_PREFIX}/auth/sso")
-                    return response
-                first_user_admin = (
-                    db.execute("SELECT 1 FROM app_user WHERE is_seed=0 LIMIT 1").fetchone() is None
-                )
-                role = "ADMIN" if first_user_admin else "VIEWER"
-                cursor = db.execute(
-                    "INSERT INTO app_user(email,name,role,password_hash,sso_subject) "
-                    "VALUES(?,?,?,?,?)",
-                    (email, name, role, password_hash(secrets.token_urlsafe(32)), sso_subject),
-                )
-                user_id = int(cursor.lastrowid)
-                row = db.execute(
-                    "SELECT id,email,name,role,active FROM app_user WHERE id=?", (user_id,)
-                ).fetchone()
-                audit(db, "app_user", str(user_id), "SSO_SIGN_UP", email, after={"role": role})
+                error = "account_exists" if email_row else "admin_required"
+                response = RedirectResponse(f"/?sso_error={error}", status_code=303)
+                response.delete_cookie(SSO_STATE_COOKIE, path=f"{API_PREFIX}/auth/sso")
+                return response
             if row is None or not row["active"]:
                 response = RedirectResponse("/?sso_error=account_inactive", status_code=303)
                 response.delete_cookie(SSO_STATE_COOKIE, path=f"{API_PREFIX}/auth/sso")
@@ -294,13 +247,12 @@ async def sso_callback(
                 (utcnow().isoformat(), row["id"]),
             )
             row = db.execute(
-                "SELECT id,email,name,role,active FROM app_user WHERE id=?", (row["id"],)
+                "SELECT id,email,name,role,role_definition_id,active FROM app_user WHERE id=?",
+                (row["id"],),
             ).fetchone()
+            role_data = user_role_data(db, row["role_definition_id"], row["role"])
 
-    sso_result = (
-        "created_admin" if created and first_user_admin else "created"
-    ) if created else "signed_in"
-    response = RedirectResponse(f"/?sso={sso_result}", status_code=303)
+    response = RedirectResponse("/?sso=signed_in", status_code=303)
     set_session_cookie(response, int(row["id"]), str(row["role"]))
     response.delete_cookie(SSO_STATE_COOKIE, path=f"{API_PREFIX}/auth/sso")
     return response

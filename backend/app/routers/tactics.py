@@ -23,7 +23,8 @@ def _visible_market(db: Any, user: dict[str, Any], market_code: str) -> dict[str
     if market is None:
         raise HTTPException(status_code=404, detail="Market not found")
     if (
-        user["role"] != "ADMIN"
+        user.get("base_role", user["role"]) != "ADMIN"
+        and "edit" not in user.get("permissions", {}).get("configuration", [])
         and market["p10_sales_org"] not in user.get("admin_sales_org_access", [])
     ):
         raise HTTPException(
@@ -43,7 +44,8 @@ async def get_tactics(user: CurrentUser) -> dict[str, Any]:
         visible_markets = [
             dict(market)
             for market in markets
-            if user["role"] == "ADMIN"
+            if user.get("base_role", user["role"]) == "ADMIN"
+            or "edit" in user.get("permissions", {}).get("configuration", [])
             or market["p10_sales_org"] in user.get("admin_sales_org_access", [])
         ]
         market_codes = [market["code"] for market in visible_markets]

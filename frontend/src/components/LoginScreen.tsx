@@ -4,10 +4,8 @@ export function LoginScreen(props: {
   busy: boolean;
   error: string;
   ssoEnabled: boolean;
-  onAuthenticate: (path: "/auth/login" | "/auth/signup", body: object) => Promise<void>;
+  onAuthenticate: (path: "/auth/login", body: object) => Promise<void>;
 }) {
-  const [registering, setRegistering] = useState(false);
-  const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const query = new URLSearchParams(window.location.search);
@@ -17,15 +15,13 @@ export function LoginScreen(props: {
     authentication_failed: "Company SSO could not authenticate your account.",
     account_exists: "This email already has an ArBa account. Contact an administrator.",
     account_inactive: "This ArBa account is inactive.",
+    admin_required: "Your account has not been created. Ask an ArBa administrator to create it.",
     invalid_state: "The SSO request expired. Please try again.",
   };
 
   function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    void props.onAuthenticate(
-      registering ? "/auth/signup" : "/auth/login",
-      registering ? { name, email, password } : { email, password },
-    );
+    void props.onAuthenticate("/auth/login", { email, password });
   }
 
   return (
@@ -38,21 +34,18 @@ export function LoginScreen(props: {
         </div>
         <section className="login-card">
           <span className="eyebrow">YOUR WORKSPACE</span>
-          <h2>{registering ? "Create your ArBa account" : "Sign in to ArBa"}</h2>
-          <p className="muted">{registering ? "Use your new account to sign in to ArBa." : "Use your ArBa account or company SSO to continue."}</p>
+          <h2>Sign in to ArBa</h2>
+          <p className="muted">Use your ArBa account or company SSO to continue.</p>
           {props.error && <p className="form-error" role="alert">{props.error}</p>}
           {ssoError && <p className="form-error" role="alert">{ssoErrors[ssoError] ?? "Company SSO could not complete sign-in."}</p>}
-          {props.ssoEnabled && !registering && <button className="button sso-button" onClick={() => { window.location.href = "/api/v1/auth/sso/start"; }}>Sign in with company SSO</button>}
+          {props.ssoEnabled && <button className="button sso-button" onClick={() => { window.location.href = "/api/v1/auth/sso/start"; }}>Sign in with company SSO</button>}
           <form onSubmit={submit}>
-            {registering && <><label htmlFor="signup-name">User name</label><input autoComplete="name" id="signup-name" minLength={2} maxLength={100} onChange={(event) => setName(event.target.value)} required value={name} /></>}
             <label htmlFor="email">Email ID</label>
-            <input autoComplete={registering ? "email" : "username"} id="email" onChange={(event) => setEmail(event.target.value)} placeholder="name@company.com" required type="email" value={email} />
-            <label htmlFor="password">Password{registering && " (at least 12 characters)"}</label>
-            <input autoComplete={registering ? "new-password" : "current-password"} id="password" minLength={registering ? 12 : undefined} onChange={(event) => setPassword(event.target.value)} required type="password" value={password} />
-            <button className="button primary wide" disabled={props.busy} type="submit">{props.busy ? "Please wait…" : registering ? "Create account" : "Sign in"}</button>
+            <input autoComplete="username" id="email" onChange={(event) => setEmail(event.target.value)} placeholder="name@company.com" required type="email" value={email} />
+            <label htmlFor="password">Password</label>
+            <input autoComplete="current-password" id="password" onChange={(event) => setPassword(event.target.value)} required type="password" value={password} />
+            <button className="button primary wide" disabled={props.busy} type="submit">{props.busy ? "Please wait…" : "Sign in"}</button>
           </form>
-          <button className="text-button" onClick={() => setRegistering((value) => !value)}>{registering ? "Back to sign in" : "New to ArBa? Create an account"}</button>
-          {registering && <p className="muted small-note">The first account created becomes the ArBa administrator. Later accounts need access assigned by an administrator.</p>}
           {!props.ssoEnabled && <p className="muted small-note">Company SSO is not configured for this instance.</p>}
         </section>
       </section>

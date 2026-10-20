@@ -49,7 +49,7 @@ SAP S/4HANA ──(customer & product master)──▶ ArBa
 | **Sales Data** | Weekly actual sell-in for the prior two calendar years, followed by baseline plus approved promotion uplift from the current week through the end of next year. Select a single year and one or more available quarters to view read-only values, or download the selected plan account's P10 Arete XLSX feed for the current week through its 52-week horizon. |
 | **Volume Report** | Monthly view: actuals for past weeks, baseline + approved uplift for future weeks. |
 | **Product Listing** | Which products are listed for which plan account. |
-| **Configuration** (admin) | Create User ID and manage user access, upload customer/product masters, and configure market-specific tactics and promotion uplift phasing. |
+| **Configuration** | Create User ID and manage user access, upload customer/product masters, and configure market-specific tactics and promotion uplift phasing. System administrators can define roles and assign screen-level view, edit, approve, import, and export permissions. |
 
 Promotion uplift phasing can be configured by Sales Org, Plan Account, and
 promotion length (2, 3, or 4 ISO weeks). Each weekly percentage must total
@@ -77,16 +77,11 @@ Sales Org / plan-account phasing profile allocates each product's uplift by
 week. Promotions without a matching profile (and other promotion lengths)
 split uplift equally across their weeks.
 
-### User roles
+### User roles and permissions
 
-| Role | Can do |
-|---|---|
-| `ADMIN` | Everything, including Configuration |
-| `APPROVER` | Plan and approve promotions for assigned accounts |
-| `PLANNER` | Plan baselines and promotions for assigned accounts |
-| `VIEWER` | Read only |
+The fixed system Admin role always has full access. System administrators create all other roles and define their screen visibility and view/edit/approve/import/export permissions in **Configuration → Role Definition**. Configuration access, including user administration, is controlled by each role's Configuration View/Edit permission; user creation no longer has a separate administrator-access selector. Users and their roles are managed through **Configuration → Create User ID**. From a user's **Edit access** dialog, users with Configuration Edit can delete non-Admin accounts. The **User Audit** export downloads a newest-first XLSX of user creation, access changes, and deletions.
 
-Users only see plan accounts assigned to them (per Sales Org).
+Users only see plan accounts assigned to them (per Sales Org). API endpoints also enforce each screen's permissions, so hiding an action in the interface is not the only access check.
 
 ---
 
@@ -285,14 +280,11 @@ ArBa first-run password (admin@arba.local): xxxxxxxxxxxxxxxx
 
 **Save this password.** It is printed only once.
 
-All demo users share that password:
+The first run creates only the administrator account:
 
 | Email | Role |
 |---|---|
 | `admin@arba.local` | ADMIN |
-| `planner@arba.local` | PLANNER |
-| `approver@arba.local` | APPROVER |
-| `viewer@arba.local` | VIEWER |
 
 To choose the password yourself, set `ARBA_INITIAL_PASSWORD` (at least 12
 characters) **before** the first run, or [reset the database](#reset-the-database).
@@ -303,8 +295,7 @@ Newly loaded plan accounts must also be assigned to users through **Access
 Management** where required by the user's role.
 
 Other first-time behaviour:
-- The first **non-demo** user who signs up becomes the global admin.
-  Later sign-ups start as `VIEWER` until an admin assigns access.
+- Self-registration is disabled. Sign in as Admin to create roles and user accounts.
 - Users who have not logged in for **30 days** are deactivated automatically.
 
 ---

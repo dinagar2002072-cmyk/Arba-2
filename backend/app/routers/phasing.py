@@ -19,7 +19,10 @@ router = APIRouter(tags=["phasing"])
 
 
 def _visible_sales_orgs(user: dict[str, Any]) -> list[str] | None:
-    if user["role"] == "ADMIN":
+    if (
+        user.get("base_role", user["role"]) == "ADMIN"
+        or "edit" in user.get("permissions", {}).get("configuration", [])
+    ):
         return None
     return user.get("admin_sales_org_access", [])
 

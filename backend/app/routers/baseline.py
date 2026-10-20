@@ -14,7 +14,7 @@ from fastapi import APIRouter, HTTPException, Query, Response
 
 from app.config import API_PREFIX
 from app.db import DB_LOCK, connect
-from app.deps import CurrentUser, check_assignment, require_role
+from app.deps import CurrentUser, check_assignment, require_permission
 from app.schemas import BaselineFileUpload, BaselineSave
 from app.services.audit import audit
 from app.services.master_data import master_file_rows
@@ -27,6 +27,7 @@ router = APIRouter(tags=['baseline'])
 
 @router.get(f"{API_PREFIX}/baseline")
 async def get_baseline(market: str, customer_id: int, user: CurrentUser) -> dict[str, Any]:
+    require_permission(user, "weekly", "view")
     with DB_LOCK, connect() as db:
         check_assignment(db, user, market, customer_id)
         market_row = db.execute(
@@ -72,7 +73,7 @@ async def get_baseline(market: str, customer_id: int, user: CurrentUser) -> dict
 
 @router.put(f"{API_PREFIX}/baseline")
 async def save_baseline(payload: BaselineSave, user: CurrentUser) -> dict[str, Any]:
-    require_role(user, "PLANNER")
+    require_permission(user, "weekly", "edit")
     if not payload.cells:
         return {"saved": 0}
     with DB_LOCK, connect() as db:
@@ -174,6 +175,7 @@ async def export_baseline_audit(
     customer_id: int,
     user: CurrentUser,
 ) -> Response:
+    require_permission(user, "weekly", "export")
     with DB_LOCK, connect() as db:
         check_assignment(db, user, market, customer_id)
         customer = db.execute(
@@ -245,6 +247,7 @@ async def export_baseline(
     user: CurrentUser,
     weeks: list[str] | None = Query(default=None),
 ) -> Response:
+    require_permission(user, "weekly", "export")
     with DB_LOCK, connect() as db:
         check_assignment(db, user, market, customer_id)
         market_row = db.execute(
@@ -304,7 +307,7 @@ async def export_baseline(
 
 @router.post(f"{API_PREFIX}/baseline/upload")
 async def upload_baseline(payload: BaselineFileUpload, user: CurrentUser) -> dict[str, int]:
-    require_role(user, "PLANNER")
+    require_permission(user, "weekly", "import")
     if Path(payload.filename).suffix.lower() != ".xlsx":
         raise HTTPException(status_code=415, detail="Upload a baseline XLSX workbook")
     try:

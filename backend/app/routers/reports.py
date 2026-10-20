@@ -9,7 +9,7 @@ from fastapi import APIRouter, HTTPException, Response
 
 from app.config import API_PREFIX
 from app.db import DB_LOCK, connect
-from app.deps import CurrentUser, check_assignment
+from app.deps import CurrentUser, check_assignment, require_permission
 from app.services.p10_feed import build_p10_rows
 from app.services.planning import product_rows_for_account
 from app.services.promotions import approved_uplift
@@ -21,6 +21,7 @@ router = APIRouter(tags=['reports'])
 
 @router.get(f"{API_PREFIX}/history")
 async def sales_history(market: str, customer_id: int, user: CurrentUser) -> dict[str, Any]:
+    require_permission(user, "history", "view")
     today = date.today()
     current_monday = today - timedelta(days=today.weekday())
     first_year = today.year - 2
@@ -84,6 +85,7 @@ async def sales_history(market: str, customer_id: int, user: CurrentUser) -> dic
 async def export_p10_arete_data(
     market: str, customer_id: int, user: CurrentUser
 ) -> Response:
+    require_permission(user, "history", "export")
     with DB_LOCK, connect() as db:
         check_assignment(db, user, market, customer_id)
         customer = db.execute(
@@ -136,6 +138,7 @@ async def export_p10_arete_data(
 async def volume_report(
     user: CurrentUser, market: str, year: int, customer_id: int | None = None
 ) -> dict[str, Any]:
+    require_permission(user, "report", "view")
     if year < 2000 or year > 2100:
         raise HTTPException(status_code=422, detail="Year must be between 2000 and 2100")
     with DB_LOCK, connect() as db:
@@ -152,14 +155,14 @@ async def volume_report(
                     (user["id"], market),
                 )
             }
-            if user["role"] != "ADMIN" and not assigned:
+            if user.get("base_role", user["role"]) != "ADMIN" and not assigned:
                 raise HTTPException(status_code=403, detail="Market is not assigned")
         params: list[Any] = [market]
         query = "SELECT id,name FROM customer_l04 WHERE market_code=? AND active=1"
         if customer_id:
             query += " AND id=?"
             params.append(customer_id)
-        elif user["role"] != "ADMIN":
+        elif user.get("base_role", user["role"]) != "ADMIN":
             marks = ",".join("?" for _ in assigned)
             query += f" AND id IN ({marks})"
             params.extend(sorted(assigned))
@@ -225,6 +228,7 @@ async def volume_report(
 
 @router.get(f"{API_PREFIX}/calendar")
 async def promo_calendar(market: str, customer_id: int, user: CurrentUser) -> dict[str, Any]:
+    require_permission(user, "calendar", "view")
     with DB_LOCK, connect() as db:
         check_assignment(db, user, market, customer_id)
         market_row = db.execute(

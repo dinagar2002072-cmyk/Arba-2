@@ -28,22 +28,8 @@ def seed_database(db: sqlite3.Connection) -> None:
         )
     if len(initial_password) < 12:
         raise ValueError("ARBA_INITIAL_PASSWORD must contain at least 12 characters")
-    users = (
-        ("admin@arba.local", "ArBa Administrator", "ADMIN"),
-        ("planner@arba.local", "Demo Planner", "PLANNER"),
-        ("approver@arba.local", "Demo Approver", "APPROVER"),
-        ("viewer@arba.local", "Demo Viewer", "VIEWER"),
+    db.execute(
+        "INSERT INTO app_user(email,name,role,password_hash,is_seed) VALUES(?,?,?,?,1)",
+        ("admin@arba.local", "ArBa Administrator", "ADMIN", password_hash(initial_password)),
     )
-    user_ids: dict[str, int] = {}
-    for email, name, role in users:
-        cursor = db.execute(
-            "INSERT INTO app_user(email,name,role,password_hash,is_seed) VALUES(?,?,?,?,1)",
-            (email, name, role, password_hash(initial_password)),
-        )
-        user_ids[role] = int(cursor.lastrowid)
-    for role in ("PLANNER", "APPROVER", "VIEWER"):
-        db.executemany(
-            "INSERT INTO user_sales_org(user_id,sales_org) VALUES(?,?)",
-            [(user_ids[role], sales_org) for _, _, _, sales_org in MARKETS],
-        )
     db.commit()

@@ -91,11 +91,10 @@ class UserAccessAssignment(BaseModel):
 
 
 class AdminUserUpdate(BaseModel):
-    role: Literal["PLANNER", "APPROVER", "ADMIN", "VIEWER"]
+    role_id: int = Field(gt=0)
     active: bool
     assignments: list[UserAccessAssignment] = Field(max_length=500)
     sales_org_access: list[str] = Field(max_length=100, default_factory=list)
-    admin_sales_org_access: list[str] = Field(max_length=100, default_factory=list)
 
 
 class AdminUserCreate(BaseModel):
@@ -103,11 +102,17 @@ class AdminUserCreate(BaseModel):
 
     email: str = Field(min_length=5, max_length=254, pattern=r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
     name: str = Field(min_length=2, max_length=100)
-    role: Literal["PLANNER", "APPROVER", "VIEWER"]
+    role_id: int = Field(gt=0)
     active: bool = True
     sales_org_access: list[str] = Field(max_length=100, default_factory=list)
     assignments: list[UserAccessAssignment] = Field(max_length=500)
-    admin_sales_org_access: list[str] = Field(max_length=100, default_factory=list)
+
+
+class RoleDefinitionPayload(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    name: str = Field(min_length=2, max_length=40)
+    permissions: dict[str, list[str]]
 
 
 class MasterFileUpload(BaseModel):

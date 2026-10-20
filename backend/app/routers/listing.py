@@ -9,7 +9,7 @@ from fastapi import APIRouter, HTTPException
 
 from app.config import API_PREFIX
 from app.db import DB_LOCK, connect
-from app.deps import CurrentUser, check_assignment, require_role
+from app.deps import CurrentUser, check_assignment, require_permission
 from app.schemas import ListingPayload
 from app.services.audit import audit
 from app.utils import iso_week, utcnow
@@ -19,6 +19,7 @@ router = APIRouter(tags=['listing'])
 
 @router.get(f"{API_PREFIX}/listing")
 async def get_listing(market: str, customer_id: int, user: CurrentUser) -> dict[str, Any]:
+    require_permission(user, "listing", "view")
     with DB_LOCK, connect() as db:
         check_assignment(db, user, market, customer_id)
         selected = [
@@ -41,7 +42,7 @@ async def get_listing(market: str, customer_id: int, user: CurrentUser) -> dict[
 
 @router.put(f"{API_PREFIX}/listing")
 async def save_listing(payload: ListingPayload, user: CurrentUser) -> dict[str, Any]:
-    require_role(user, "PLANNER")
+    require_permission(user, "listing", "edit")
     with DB_LOCK, connect() as db:
         with db:
             check_assignment(db, user, payload.market, payload.customer_id)

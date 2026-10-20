@@ -39,6 +39,7 @@ from app.routers import (
     phasing,
     promotions,
     reports,
+    role_definitions,
     tactics,
 )
 from app.services.scheduler import inactive_user_scheduler
@@ -69,6 +70,7 @@ app.include_router(baseline.router)
 app.include_router(promotions.router)
 app.include_router(listing.router)
 app.include_router(reports.router)
+app.include_router(role_definitions.router)
 app.include_router(files.router)
 app.include_router(admin_users.router)
 app.include_router(phasing.router)
